@@ -1,0 +1,22 @@
+{
+  "name": "opencode-freellmapi",
+  "version": "0.1.0",
+  "description": "OpenCode plugin: dynamic FreeLLMApi provider/model sync",
+  "type": "module",
+  "main": "index.js",
+  "files": ["index.js", "README.md", "LICENSE"],
+  "scripts": {
+    "test": "node --test index.test.js"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "freellmapi",
+    "ai",
+    "llm"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@opencode-ai/plugin": "*"
+  }
+}
