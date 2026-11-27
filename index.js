@@ -1,44 +1,41 @@
-const DEFAULT_OUTPUT_LIMIT = 65536;
-const DEFAULT_CONTEXT_LIMIT = 1048576;
-const FETCH_TIMEOUT_MS = 5000;
+// opencode plugin entry. Export only the default: opencode v1 treats every
+// exported function as a plugin. Helpers live in lib.js.
+//
+// One object serves both opencode lines:
+//   v1 (`opencode-ai`):   reads `id` + `server`, runs the `config` hook.
+//   v2 (`@opencode/cli`): reads `id` + `setup`, adds models via provider.transform.
+import { PROVIDER_ID, fetchModels, toV2Models } from "./lib.js";
 
-export function discoverModels(modelsArray) {
-  if (!Array.isArray(modelsArray)) return {};
-  const models = {};
-  for (const m of modelsArray) {
-    if (!m || m.available !== true || typeof m.id !== "string" || !m.id) continue;
-    const id = m.id;
-    const context = Number(m.context_length) || DEFAULT_CONTEXT_LIMIT;
-    models[id] = {
-      name: typeof m.name === "string" && m.name ? m.name : id,
-      limit: { context, output: DEFAULT_OUTPUT_LIMIT },
-    };
-  }
-  return models;
-}
+export default {
+  id: "opencode-freellmapi",
 
-export default async function freellmapiSyncPlugin(_input) {
-  return {
+  // opencode v1: fill `provider.freellmapi.models` in the loaded config.
+  server: async (_input, options) => ({
     config: async (cfg) => {
-      try {
-        const provider = cfg?.provider?.freellmapi;
-        if (!provider) return;
-        const baseURL = provider?.options?.baseURL;
-        const apiKey = provider?.options?.apiKey;
-        if (typeof baseURL !== "string" || !baseURL) return;
-        if (typeof apiKey !== "string" || !apiKey) return;
-
-        const res = await fetch(`${baseURL.replace(/\/+$/, "")}/models`, {
-          headers: { Authorization: `Bearer ${apiKey}` },
-          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-        });
-        if (!res.ok) return;
-
-        const body = await res.json();
-        provider.models = discoverModels(body?.data);
-      } catch {
-        // Silent skip — never let FreeLLMApi being down break opencode startup.
-      }
+      const provider = cfg?.provider?.[PROVIDER_ID];
+      if (!provider) return;
+      const models = await fetchModels({
+        baseURL: provider.options?.baseURL || options?.baseURL,
+        apiKey: provider.options?.apiKey || options?.apiKey,
+      });
+      if (models) provider.models = models;
     },
-  };
-}
+  }),
+
+  // opencode v2: plugins can't read a config provider's settings at setup
+  // time, so the URL and key come from plugin options, then env / auth.json.
+  setup: async (ctx) => {
+    try {
+      const models = await fetchModels({
+        baseURL: ctx?.options?.baseURL,
+        apiKey: ctx?.options?.apiKey,
+      });
+      if (!models) return;
+      await ctx.provider.transform((editor) => {
+        editor.models.set(PROVIDER_ID, toV2Models(models));
+      });
+    } catch {
+      // Never break opencode startup.
+    }
+  },
+};
